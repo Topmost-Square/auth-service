@@ -1,13 +1,38 @@
-import { sign } from 'jsonwebtoken'
+import {JwtPayload, sign, verify} from 'jsonwebtoken'
 
 export interface UserType {
     _id: String
 }
 
-export const generateAccessToken = (user: UserType) => {
+export const parseRefreshToken = (token: string) => {
+    let error = null;
+    let decodedToken: JwtPayload|String = {};
+
+    verify(token, process.env.REFRESH_TOKEN_SECRET!, (err, decoded) => {
+        if (err) {
+            error = err
+        }
+
+        if (decoded) {
+            decodedToken = decoded;
+        }
+    });
+
+    return { error, decodedToken };
+}
+
+export const generateAccessToken = (id: String) => {
     return sign({
-        id: user._id
+        id
     }, process.env.ACCESS_TOKEN_SECRET!, {
-        expiresIn: '15m'
+        expiresIn: '1m'
+    });
+}
+
+export const generateRefreshToken = (id: String) => {
+    return sign({
+        id
+    }, process.env.REFRESH_TOKEN_SECRET!, {
+        expiresIn: '30d'
     });
 }

@@ -1,5 +1,7 @@
 import {compare, hash} from "bcryptjs";
-import {generateAccessToken} from "../utils/token";
+import {generateAccessToken, generateRefreshToken, parseRefreshToken, UserType} from "../utils/token";
+import {Response} from "express";
+import {MyContext} from "../utils/isAuth";
 const { UserInputError } = require('apollo-server')
 const { validateRegister, validateLogin } = require('../utils/validate')
 
@@ -16,6 +18,18 @@ type LoginInput = {
     password: string,
 }
 
+const setRefreshToken = (res: Response, id: String) => {
+    res.cookie(
+        'rfrTkn',
+        generateRefreshToken(id),
+        {
+            httpOnly: true,
+            secure: true,
+            maxAge: 24 * 60 * 60 * 1000
+        }
+    );
+}
+
 module.exports = {
     Query: {
         getAllUsers: async (_: any, args: any) => {
@@ -23,7 +37,7 @@ module.exports = {
         }
     },
     Mutation: {
-         register: async (_: any, { email, password, confirmPassword }: RegisterInput ) => {
+         register: async (_: any, { email, password, confirmPassword }: RegisterInput, { req, res }: MyContext ) => {
             const validatedInput = validateRegister(email, password, confirmPassword);
 
             for (let errorKey in validatedInput) {
@@ -55,16 +69,17 @@ module.exports = {
 
             const userResponse = await newUser.save();
 
-            const token = generateAccessToken(userResponse);
+            const token = generateAccessToken(userResponse._id);
 
-            return {
+             setRefreshToken(res, userResponse._id);
+
+             return {
                 ...userResponse._doc,
                 id: userResponse._id,
                 token
             }
         },
-        async login (_: any, { email, password }: LoginInput) {
-
+        async login (_: any, { email, password }: LoginInput, { req, res }: MyContext) {
             const validatedInput = validateLogin(email, password);
 
             for (let errorKey in validatedInput) {
@@ -97,7 +112,9 @@ module.exports = {
                 });
             }
 
-            const token = generateAccessToken(user);
+            const token = generateAccessToken(user._id);
+
+            setRefreshToken(res, user._id);
 
             return {
                 ...user._doc,
@@ -105,5 +122,37 @@ module.exports = {
                 token
             }
         },
+        async refresh (_: any, __: any, { req, res }: MyContext) {
+             if (req.cookies.rfrTkn) {
+                 const { error, decodedToken } = parseRefreshToken(req.cookies.rfrTkn)
+
+                 if (error) {
+                     throw new UserInputError('Failed refreshing token', {
+                         errorContent: {
+                             refreshToken: 'Failed refreshing token'
+                         }
+                     });
+                 }
+
+                 if (decodedToken.id && decodedToken.exp! > (new Date().getTime()) / 1000) {
+                     const token = generateAccessToken(decodedToken.id);
+
+                     setRefreshToken(res, decodedToken.id);
+
+                     return {
+                         token
+                     }
+                 }
+
+                 return {
+                     token: null
+                 };
+             }
+
+            return {
+                token: null
+            };
+
+        }
     }
 };
