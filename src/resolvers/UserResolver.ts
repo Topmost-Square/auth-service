@@ -32,8 +32,20 @@ const setRefreshToken = (res: Response, id: String) => {
 
 module.exports = {
     Query: {
-        getAllUsers: async (_: any, args: any) => {
-            return await User.find();
+        me: async (_: any, __: any, {req, res}: MyContext) => {
+            if (req.cookies.rfrTkn) {
+                const {error, decodedToken} = parseRefreshToken(req.cookies.rfrTkn)
+
+                if (error) {
+                    throw new UserInputError('Failed fetching user id', {
+                        errorContent: {
+                            user: 'Failed fetching user id'
+                        }
+                    });
+                }
+
+                return await User.findById(decodedToken.id);
+            }
         }
     },
     Mutation: {
